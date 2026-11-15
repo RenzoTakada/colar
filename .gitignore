@@ -1,0 +1,9 @@
+.build/
+build/
+.DS_Store
+*.swp
+# gerados por design/icone.swift e iconutil (o .icns final vai no repo)
+design/Colar.iconset/
+# rascunhos de design que não vão para o repo público
+design/conceitos/
+design/canva/
