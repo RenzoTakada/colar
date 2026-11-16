@@ -3,6 +3,7 @@
 import AppKit
 import Carbon
 import ColarCore
+import ServiceManagement
 import SwiftUI
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -20,6 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var monitorCliqueFora: Any?
     private var atalhoTexto = "—"
     private var timerRetencao: Timer?
+    private var avisouAcessibilidade = false
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         NSAppleEventManager.shared().setEventHandler(self, andSelector: #selector(abrirURL(_:resposta:)),
@@ -71,6 +73,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         registrarAtalho()
         montarMenu()
+        garantirInicioComOMac()
         if !Paster.temAcessibilidade { Paster.pedirAcessibilidade() }
         Diario.anotar("iniciado; acessibilidade=\(Paster.temAcessibilidade) atalho=\(atalhoTexto) v=\(KeyboardLayout.vAtual()) layout=\(KeyboardLayout.id(KeyboardLayout.atual())) itens=\((try? historico.recentes(limite: 100_000).count) ?? -1) retencao=\(historico.retencao.rawValue)")
     }
@@ -132,7 +135,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: menu
 
-    private enum Tag: Int { case pausar = 1, acessibilidade, print, retencao, modoApp, modoClipboard, textoPuro, sons }
+    private enum Tag: Int { case pausar = 1, acessibilidade, print, retencao, modoApp, modoClipboard, textoPuro, sons, login }
 
     private func montarMenu() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -162,6 +165,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         subColar.addItem(item("Sempre colar sem formatação", #selector(alternarTextoPuro), tag: .textoPuro))
         colarItens.submenu = subColar
         menu.addItem(colarItens)
+        menu.addItem(item("Iniciar com o Mac", #selector(alternarLogin), tag: .login))
         menu.addItem(item("Efeitos sonoros", #selector(alternarSons), tag: .sons))
         menu.addItem(item("Permitir print do painel", #selector(alternarPrint), tag: .print))
         menu.addItem(item("Apagar histórico…", #selector(apagarHistorico)))
@@ -223,6 +227,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard a.runModal() == .alertFirstButtonReturn else { return }
         try? historico.apagarTudo()
         Diario.anotar("histórico apagado pelo menu")
+    }
+
+    // MARK: iniciar com o Mac
+
+    /// Liga o item de login (`SMAppService.mainApp`) por padrão, só na cópia de /Applications: a de build não deve
+    /// abrir sozinha. Desligado pelo menu, a escolha fica em `iniciar_login=0` e não é religada.
+    private func garantirInicioComOMac() {
+        guard historico.config("iniciar_login") != "0", Bundle.main.bundlePath.hasPrefix("/Applications/") else { return }
+        let s = SMAppService.mainApp
+        guard s.status != .enabled else { return }
+        do { try s.register(); Diario.anotar("iniciar com o Mac: registrado (status \(s.status.rawValue))") }
+        catch { Diario.anotar("iniciar com o Mac: falhou \(error)") }
+    }
+
+    @objc private func alternarLogin() {
+        let s = SMAppService.mainApp
+        do {
+            if s.status == .enabled { try s.unregister(); historico.definir("iniciar_login", "0") }
+            else { try s.register(); historico.definir("iniciar_login", "1") }
+            Diario.anotar("iniciar com o Mac: status \(s.status.rawValue)")
+        } catch {
+            Diario.anotar("iniciar com o Mac: falhou \(error)")
+            if s.status == .requiresApproval { SMAppService.openSystemSettingsLoginItems() }
+        }
     }
 
     @objc private func acessibilidade() {
@@ -425,7 +453,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let inicio = Date()
         guard c.postarCmdV else {
             Diario.anotar("item \(indice + 1) só copiado (\(c.motivo ?? "")) app=\(frente)")
-            if c.motivo == "sem acessibilidade" { NSSound.beep() } else if historico.sons { Sons.copiou() }
+            if c.motivo == "sem acessibilidade" {
+                NSSound.beep()
+                // Só o bipe não diz nada: na primeira vez por execução, abre a tela da Acessibilidade.
+                if !avisouAcessibilidade { avisouAcessibilidade = true; acessibilidade() }
+            } else if historico.sons { Sons.copiou() }
             return
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
@@ -446,6 +478,7 @@ extension AppDelegate: NSMenuDelegate {
         sub?.item(withTag: Tag.modoClipboard.rawValue)?.state = historico.modoColar == .areaTransferencia ? .on : .off
         sub?.item(withTag: Tag.textoPuro.rawValue)?.state = historico.sempreTextoPuro ? .on : .off
         menu.item(withTag: Tag.sons.rawValue)?.state = historico.sons ? .on : .off
+        menu.item(withTag: Tag.login.rawValue)?.state = SMAppService.mainApp.status == .enabled ? .on : .off
         for i in menu.item(withTag: Tag.retencao.rawValue)?.submenu?.items ?? [] {
             i.state = (i.representedObject as? String) == historico.retencao.rawValue ? .on : .off
         }

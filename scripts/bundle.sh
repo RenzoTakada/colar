@@ -1,5 +1,6 @@
 #!/bin/zsh
-# Monta build/Colar.app a partir do binário do SwiftPM (sem Xcode). Assina com um certificado "Apple Development" do
+# Monta build.noindex/Colar.app a partir do binário do SwiftPM (sem Xcode). A pasta .noindex fica fora do Spotlight,
+# então a cópia de build não aparece como um segundo "Colar". Assina com um certificado "Apple Development" do
 # keychain, se houver: a permissão de Acessibilidade (sem ela o Colar não cola) fica presa à assinatura, e com
 # certificado ela sobrevive a cada build novo. Sem certificado (ou com COLAR_ADHOC=1), assina ad hoc.
 # Uso: scripts/bundle.sh [debug|release] [install]
@@ -15,7 +16,7 @@ BIN=".build/$CFG/Colar"
 
 VERSAO=0.0.1
 BUILD=$(date +%Y%m%d%H%M)
-APP="build/Colar.app"
+APP="build.noindex/Colar.app"
 rm -rf "$APP"; mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/Colar"
 [ -f design/Colar.icns ] && cp design/Colar.icns "$APP/Contents/Resources/Colar.icns"
